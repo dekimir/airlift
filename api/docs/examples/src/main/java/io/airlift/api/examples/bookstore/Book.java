@@ -9,20 +9,21 @@ import io.airlift.api.ApiUnwrapped;
 import static java.util.Objects.requireNonNull;
 
 /**
- * Complete Book resource including ID and version information.
- * The ApiUnwrapped annotation means all fields from NewBook are
+ * Complete Book resource including system metadata (ID and version).
+ * Represents a book resource in the API - book data plus system-generated metadata.
+ * The ApiUnwrapped annotation means all fields from BookData are
  * included directly in this resource without nesting.
  */
-@ApiResource(name = "book", description = "A book in the bookstore")
+@ApiResource(name = "book", description = "Book resource with metadata")
 public record Book(
         @ApiDescription("Unique book identifier") @ApiReadOnly BookId bookId,
         ApiResourceVersion syncToken,
-        @ApiUnwrapped NewBook bookData)
+        @ApiUnwrapped BookData data)
 {
     public Book
     {
         requireNonNull(bookId, "bookId is null");
         requireNonNull(syncToken, "syncToken is null");
-        requireNonNull(bookData, "bookData is null");
+        requireNonNull(data, "data is null");
     }
 }

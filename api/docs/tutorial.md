@@ -80,18 +80,20 @@ public class BookId extends ApiId<Book, BookId.BookInternalId>
 
 **See:** [examples/src/.../BookId.java](examples/src/main/java/io/airlift/api/examples/bookstore/BookId.java)
 
-## Step 2: Define the "New" Resource
+## Step 2: Define the Book Data
 
-When clients create a resource, they don't provide an ID or version (the server generates those). So we create a "New" resource class.
+When clients create a resource, they don't provide an ID or version (the server generates those). So we create a class that represents just the book information/data.
 
 ### Why Two Resource Classes?
 
-- **NewBook**: Used for creation - contains only the fields clients provide
-- **Book**: The complete resource - includes ID, version, and all data
+- **BookData**: The book information - contains only the fields clients provide (title, author, etc.)
+- **Book**: A resource in the system - book data plus system-generated metadata (ID, version)
 
-This separation is cleaner than having nullable IDs or version fields.
+Think of it as: **BookData = domain data**, **Book = resource = data + metadata**
 
-### Create NewBook.java
+This separation is cleaner and more type-safe than having nullable/optional IDs or version fields.
+
+### Create BookData.java
 
 ```java
 package io.airlift.api.examples.bookstore;
@@ -101,8 +103,8 @@ import io.airlift.api.ApiResource;
 
 import static java.util.Objects.requireNonNull;
 
-@ApiResource(name = "book", description = "A book in the bookstore")
-public record NewBook(
+@ApiResource(name = "book", description = "Book information")
+public record BookData(
         @ApiDescription("Title of the book") String title,
         @ApiDescription("Author of the book") String author,
         @ApiDescription("ISBN number") String isbn,
@@ -110,7 +112,7 @@ public record NewBook(
         @ApiDescription("Price in USD") double price)
 {
     // Compact constructor for validation
-    public NewBook
+    public BookData
     {
         requireNonNull(title, "title is null");
         requireNonNull(author, "author is null");
@@ -132,9 +134,9 @@ public record NewBook(
   - `description` appears in OpenAPI documentation
 - **@ApiDescription** documents each field
 - Use Java record's **compact constructor** for validation
-- Contains only the mutable, client-provided fields
+- Contains only the mutable, client-provided fields (no system metadata)
 
-**See:** [examples/src/.../NewBook.java](examples/src/main/java/io/airlift/api/examples/bookstore/NewBook.java)
+**See:** [examples/src/.../BookData.java](examples/src/main/java/io/airlift/api/examples/bookstore/BookData.java)
 
 ## Step 3: Define the Complete Resource
 
@@ -160,17 +162,17 @@ import io.airlift.api.ApiUnwrapped;
 
 import static java.util.Objects.requireNonNull;
 
-@ApiResource(name = "book", description = "A book in the bookstore")
+@ApiResource(name = "book", description = "Book resource with metadata")
 public record Book(
         @ApiDescription("Unique book identifier") @ApiReadOnly BookId bookId,
         ApiResourceVersion syncToken,
-        @ApiUnwrapped NewBook bookData)
+        @ApiUnwrapped BookData data)
 {
     public Book
     {
         requireNonNull(bookId, "bookId is null");
         requireNonNull(syncToken, "syncToken is null");
-        requireNonNull(bookData, "bookData is null");
+        requireNonNull(data, "data is null");
     }
 }
 ```
@@ -179,20 +181,21 @@ public record Book(
 - **Three required fields** for complete resources:
   1. **Resource ID** (with `@ApiReadOnly` - clients can't modify it)
   2. **ApiResourceVersion syncToken** (for versioning)
-  3. **@ApiUnwrapped NewBook** (includes all the data fields without nesting)
-- **@ApiUnwrapped** means all fields from `NewBook` appear directly in the JSON:
+  3. **@ApiUnwrapped BookData** (includes all the data fields without nesting)
+- **@ApiUnwrapped** means all fields from `BookData` appear directly in the JSON:
   ```json
   {
     "bookId": "123",
     "syncToken": {"version": 1},
-    "title": "...",      // These come from NewBook
+    "title": "...",      // These come from BookData
     "author": "...",     // but appear at the top level
     "isbn": "...",
     "year": 2020,
     "price": 29.99
   }
   ```
-  Without `@ApiUnwrapped`, you'd have nested JSON: `{"bookId": "123", "bookData": {...}}`
+  Without `@ApiUnwrapped`, you'd have nested JSON: `{"bookId": "123", "data": {...}}`
+- The field name `data` clearly indicates this is the book's information/data
 
 **See:** [examples/src/.../Book.java](examples/src/main/java/io/airlift/api/examples/bookstore/Book.java)
 
@@ -288,34 +291,34 @@ import static io.airlift.api.responses.ApiException.notFound;
 public class BookService
 {
     // In-memory storage (use a real database in production!)
-    private final Map<String, BookData> books = new ConcurrentHashMap<>();
+    private final Map<String, StoredBook> books = new ConcurrentHashMap<>();
     private final AtomicInteger nextId = new AtomicInteger(1);
 
-    private record BookData(BookId id, int version, NewBook data) {}
+    private record StoredBook(BookId id, int version, BookData data) {}
 
     @ApiCreate(description = "Create a new book")
-    public Book createBook(NewBook newBook)
+    public Book createBook(BookData bookData)
     {
         // Generate ID
         String id = String.valueOf(nextId.getAndIncrement());
         BookId bookId = new BookId(id);
 
         // Store it
-        BookData data = new BookData(bookId, 1, newBook);
-        books.put(id, data);
+        StoredBook stored = new StoredBook(bookId, 1, bookData);
+        books.put(id, stored);
 
         // Return the complete resource
-        return new Book(bookId, new ApiResourceVersion(1), newBook);
+        return new Book(bookId, new ApiResourceVersion(1), bookData);
     }
 
     @ApiGet(description = "Get a book by its ID")
     public Book getBook(@ApiParameter BookId bookId)
     {
-        BookData data = books.get(bookId.toString());
-        if (data == null) {
+        StoredBook stored = books.get(bookId.toString());
+        if (stored == null) {
             throw notFound("Book not found: " + bookId);
         }
-        return new Book(data.id, new ApiResourceVersion(data.version), data.data);
+        return new Book(stored.id, new ApiResourceVersion(stored.version), stored.data);
     }
 }
 ```
@@ -326,7 +329,7 @@ public class BookService
   - `type`: Links to the service type we created
   - `description`: OpenAPI documentation
 - **@ApiCreate** method:
-  - Takes `NewBook` as input (the data without ID/version)
+  - Takes `BookData` as input (the data without ID/version)
   - Returns complete `Book` (with ID and version)
   - Framework automatically creates endpoint: `POST /v1/bookstore/books`
 - **@ApiGet** method:
@@ -334,6 +337,7 @@ public class BookService
   - Returns `Book` or throws exception if not found
   - Framework automatically creates endpoint: `GET /v1/bookstore/books/{bookId}`
 - **Error handling**: Use `ApiException.notFound()`, `ApiException.badRequest()`, etc.
+- **StoredBook**: Internal record for storage - don't confuse with the API's BookData class
 
 ### Adding More Methods
 
@@ -650,11 +654,13 @@ The framework provides all of this without extra code:
 When creating a new service, follow this order:
 
 1. **Resource ID** (`BookId`) - Every resource needs an ID
-2. **"New" Resource** (`NewBook`) - For creation without ID/version
-3. **Complete Resource** (`Book`) - With ID, version, and data
+2. **Data Class** (`BookData`) - The domain data without system metadata
+3. **Complete Resource** (`Book`) - Data plus system metadata (ID, version)
 4. **Service Type** (`BookServiceType`) - Defines versioning and grouping
 5. **Service** (`BookService`) - Implements the methods
 6. **Server Bootstrap** (`BookstoreServer`) - Wires everything together
+
+**Conceptual Model**: BookData = domain information, Book = resource = data + metadata
 
 ## Next Steps
 
@@ -671,7 +677,7 @@ When creating a new service, follow this order:
 public enum BookGenre { FICTION, NON_FICTION, TECHNICAL }
 
 @ApiResource(name = "book", description = "...")
-public record NewBook(
+public record BookData(
     String title,
     @ApiDescription("Genre of the book") BookGenre genre
 ) {}
@@ -680,7 +686,7 @@ public record NewBook(
 ### Optional Fields
 ```java
 @ApiResource(name = "book", description = "...")
-public record NewBook(
+public record BookData(
     String title,
     @ApiDescription("Subtitle (optional)") Optional<String> subtitle
 ) {}
@@ -691,7 +697,7 @@ public record NewBook(
 public record Author(String name, String email) {}
 
 @ApiResource(name = "book", description = "...")
-public record NewBook(
+public record BookData(
     String title,
     @ApiDescription("Book author") Author author
 ) {}
@@ -700,7 +706,7 @@ public record NewBook(
 ### List Fields
 ```java
 @ApiResource(name = "book", description = "...")
-public record NewBook(
+public record BookData(
     String title,
     @ApiDescription("Tags for categorization") List<String> tags
 ) {}
@@ -712,7 +718,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
 @ApiResource(name = "book", description = "...")
-public record NewBook(
+public record BookData(
     @NotBlank String title,
     @Min(1) int year
 ) {}

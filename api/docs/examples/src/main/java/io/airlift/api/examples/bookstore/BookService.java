@@ -36,13 +36,13 @@ import static io.airlift.api.responses.ApiException.notFound;
 @ApiService(name = "book", type = BookServiceType.class, description = "Manage books in the bookstore")
 public class BookService
 {
-    private final Map<String, BookData> books = new ConcurrentHashMap<>();
+    private final Map<String, StoredBook> books = new ConcurrentHashMap<>();
     private final AtomicInteger nextId = new AtomicInteger(1);
 
     /**
-     * Internal storage for book data.
+     * Internal storage record combining ID, version, and book data.
      */
-    private record BookData(BookId id, int version, NewBook data) {}
+    private record StoredBook(BookId id, int version, BookData data) {}
 
     /**
      * List all books with pagination support.
@@ -61,9 +61,9 @@ public class BookService
         if (pagination.ordering().isPresent()) {
             var orderingSpec = pagination.ordering().get();
             Comparator<Book> comparator = switch (orderingSpec.field()) {
-                case "title" -> Comparator.comparing(b -> b.bookData().title());
-                case "author" -> Comparator.comparing(b -> b.bookData().author());
-                case "year" -> Comparator.comparingInt(b -> b.bookData().year());
+                case "title" -> Comparator.comparing(b -> b.data().title());
+                case "author" -> Comparator.comparing(b -> b.data().author());
+                case "year" -> Comparator.comparingInt(b -> b.data().year());
                 default -> (a, b) -> 0;
             };
             if (orderingSpec.direction() == ApiOrderByDirection.DESCENDING) {
@@ -92,25 +92,25 @@ public class BookService
     @ApiGet(description = "Get a book by its ID")
     public Book getBook(@ApiParameter BookId bookId)
     {
-        BookData data = books.get(bookId.toString());
-        if (data == null) {
+        StoredBook stored = books.get(bookId.toString());
+        if (stored == null) {
             throw notFound("Book not found: " + bookId);
         }
-        return new Book(data.id, new ApiResourceVersion(data.version), data.data);
+        return new Book(stored.id, new ApiResourceVersion(stored.version), stored.data);
     }
 
     /**
      * Create a new book.
      */
     @ApiCreate(description = "Create a new book")
-    public Book createBook(NewBook newBook)
+    public Book createBook(BookData bookData)
     {
         String id = String.valueOf(nextId.getAndIncrement());
         BookId bookId = new BookId(id);
-        BookData data = new BookData(bookId, 1, newBook);
-        books.put(id, data);
+        StoredBook stored = new StoredBook(bookId, 1, bookData);
+        books.put(id, stored);
 
-        return new Book(bookId, new ApiResourceVersion(1), newBook);
+        return new Book(bookId, new ApiResourceVersion(1), bookData);
     }
 
     /**
@@ -122,30 +122,30 @@ public class BookService
             @ApiParameter BookId bookId,
             ApiPatch<Book> patch)
     {
-        BookData currentData = books.get(bookId.toString());
-        if (currentData == null) {
+        StoredBook currentStored = books.get(bookId.toString());
+        if (currentStored == null) {
             throw notFound("Book not found: " + bookId);
         }
 
         // Apply patch to current book
         Book currentBook = new Book(
-                currentData.id,
-                new ApiResourceVersion(currentData.version),
-                currentData.data);
+                currentStored.id,
+                new ApiResourceVersion(currentStored.version),
+                currentStored.data);
         Book updatedBook = patch.apply(currentBook);
 
         // Store updated version
-        int newVersion = currentData.version + 1;
-        BookData newData = new BookData(
+        int newVersion = currentStored.version + 1;
+        StoredBook newStored = new StoredBook(
                 updatedBook.bookId(),
                 newVersion,
-                updatedBook.bookData());
-        books.put(bookId.toString(), newData);
+                updatedBook.data());
+        books.put(bookId.toString(), newStored);
 
         return new Book(
                 updatedBook.bookId(),
                 new ApiResourceVersion(newVersion),
-                updatedBook.bookData());
+                updatedBook.data());
     }
 
     /**
@@ -155,11 +155,11 @@ public class BookService
     @ApiDelete(description = "Delete a book")
     public Book deleteBook(@ApiParameter BookId bookId)
     {
-        BookData data = books.remove(bookId.toString());
-        if (data == null) {
+        StoredBook stored = books.remove(bookId.toString());
+        if (stored == null) {
             throw notFound("Book not found: " + bookId);
         }
-        return new Book(data.id, new ApiResourceVersion(data.version), data.data);
+        return new Book(stored.id, new ApiResourceVersion(stored.version), stored.data);
     }
 
     /**

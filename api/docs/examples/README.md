@@ -32,7 +32,7 @@ mvn clean compile
 
 The bookstore example demonstrates a complete CRUD API for managing books. It showcases:
 
-- **Resource definitions** (`Book`, `NewBook`, `BookId`)
+- **Resource definitions** (`Book`, `BookData`, `BookId`)
 - **Standard methods** (List, Get, Create, Update, Delete)
 - **Service implementation** (`BookService`)
 - **Pagination and ordering** for list operations
@@ -111,18 +111,20 @@ Or open in a browser: http://localhost:8080/openapi
 The example uses three main classes for the Book resource:
 
 1. **`BookId`** - Type-safe identifier for books
-   - Extends `ApiId<Book, String>`
+   - Extends `ApiId<Book, BookInternalId>`
    - Provides serialization/deserialization support
 
-2. **`NewBook`** - Used for creating new books
+2. **`BookData`** - Book information/data without system metadata
    - Annotated with `@ApiResource`
-   - Contains only the mutable fields (no ID or version)
+   - Contains only the domain fields (title, author, etc.)
+   - No ID or version - those are system-generated
    - Includes validation in the compact constructor
 
-3. **`Book`** - The complete resource
+3. **`Book`** - The complete resource with system metadata
    - Includes `BookId` and `ApiResourceVersion` (syncToken)
-   - Uses `@ApiUnwrapped` to include all fields from `NewBook`
-   - Represents the full state returned from the API
+   - Uses `@ApiUnwrapped` to include all fields from `BookData`
+   - Represents: resource = data + metadata
+   - This is what the API returns to clients
 
 ### Service Implementation
 
