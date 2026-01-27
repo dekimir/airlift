@@ -27,13 +27,13 @@ public class BookService
             throw badRequest("Must provide BookData payload");
         }
         String id = String.valueOf(nextId.getAndIncrement()); // BookData includes ISBN, but ISBN is neither universal nor actually unique.
-        Book book = new Book(new Book.BookId(id), new ApiResourceVersion(), bookData);
+        Book book = new Book(new Book.Id(id), new ApiResourceVersion(), bookData);
         books.put(id, book);
         return book;
     }
 
     @ApiGet(description = "Get a book by its ID")
-    public Book getBook(@ApiParameter Book.BookId id)
+    public Book getBook(@ApiParameter Book.Id id)
     {
         Book book = books.get(id.toString());
         if (book == null) {
