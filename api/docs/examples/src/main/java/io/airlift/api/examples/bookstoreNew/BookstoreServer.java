@@ -97,8 +97,7 @@ public class BookstoreServer
         log.info("======================================================");
         log.info("Base URI: %s", server.getBaseUri());
         log.info("");
-        log.info("Try these endpoints:");
-        log.info("  Create book:  POST   %s/bookServiceTypeId/api/v21/bookData", server.getBaseUri());
+        log.info("Please see the io.airlift.api.binding log lines above for available endpoints.");
         log.info("======================================================");
         log.info("Press Ctrl+C to stop the server");
         log.info("======================================================");
