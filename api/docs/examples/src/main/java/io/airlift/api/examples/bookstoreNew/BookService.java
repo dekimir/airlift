@@ -1,12 +1,15 @@
 package io.airlift.api.examples.bookstoreNew;
 
+import com.google.common.collect.ImmutableList;
 import io.airlift.api.ApiCreate;
 import io.airlift.api.ApiGet;
+import io.airlift.api.ApiList;
 import io.airlift.api.ApiParameter;
 import io.airlift.api.ApiResourceVersion;
 import io.airlift.api.ApiService;
 import io.airlift.api.ApiTrait;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,10 +45,9 @@ public class BookService
         return book;
     }
 
-
-//    @ApiList(description = "List all books in the bookstore")
-//    public List<BookData> listBooks()
-//    {
-//        return ImmutableList.copyOf(books.values());
-//    }
+    @ApiList(description = "List all books in the bookstore")
+    public List<Book> listBooks()
+    {
+        return ImmutableList.copyOf(books.values());
+    }
 }
